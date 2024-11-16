@@ -85,4 +85,92 @@ ggplot(average_results, aes(x = mu)) +
   ) +
   theme_minimal()
 ```
+# Problem 3
+```{r}
+# Loading the dataset
+data_url <- "https://raw.githubusercontent.com/washingtonpost/data-homicides/master/homicide-data.csv"
+
+homicides_data <- read_csv(data_url)
+
+# Create the city_state variable and summarize within the city
+homicides_df <- homicides_data %>%
+  mutate(city_state = paste(city, state, sep = ", ")) %>% 
+  group_by(city_state) %>%
+  summarize(
+    total_homicides = n(),  # Total number of homicides
+    unsolved_homicides = sum(disposition %in% c("Closed without arrest", "Open/No arrest"))  # Unsolved homicides
+  )
+
+# Estimate the proportion of homicides for Baltimore
+baltimore_df <- homicides_df %>%
+  filter(city_state == "Baltimore, MD") %>%  # Filter for Baltimore, MD
+  summarize(
+    total_homicides = total_homicides,  # Already exists in dataset
+    unsolved_homicides = unsolved_homicides  # Already exists in dataset
+  ) %>%
+  mutate(
+    prop_test = list(
+      prop.test(x = unsolved_homicides, n = total_homicides, correct = FALSE, conf.level = 0.95)  # Perform prop.test
+    )
+  ) %>%
+  mutate(tidy_output = map(prop_test, broom::tidy)) %>%  # Tidy the prop.test output
+  unnest(tidy_output) %>%  # Unnest the tidy result
+  select(estimate, conf.low, conf.high)  # Select the proportion and confidence intervals
+
+print(baltimore_df)
+
+# prop-test for each of the city
+all_df <- homicides_df %>%
+  group_by(city_state) %>%
+  summarize(
+    total_homicides = sum(total_homicides),
+    unsolved_homicides = sum(unsolved_homicides)
+  ) %>%
+  mutate(
+    prop_test = map2(
+      unsolved_homicides,
+      total_homicides,
+      ~ prop.test(x = .x, n = .y, correct = FALSE)  # Ensure continuity correction is consistent
+    )
+  ) %>%
+  mutate(tidy_output = map(prop_test, broom::tidy)) %>%
+  unnest(tidy_output) %>%
+  select(city_state, estimate, conf.low, conf.high)
+
+
+print (all_df)
+
+
+# Plot
+plot_data <- all_df %>%
+  arrange(estimate) %>%  # Sort by the proportion
+  mutate(city_state = factor(city_state, levels = city_state))  # Keep sorted order
+
+ggplot(plot_data, aes(x = estimate, y = city_state)) +
+  geom_point(size = 1) +  # Reduce dot size
+  geom_errorbarh(aes(xmin = conf.low, xmax = conf.high), height = 0.2) +  # Add error bars
+  scale_x_continuous(
+    breaks = seq(0, 1, by = 0.1),  # Set x-axis ticks at 0.1 intervals
+    limits = c(0, 1)  # Restrict range to 0-1
+  ) +
+  theme_minimal() +  # Use a minimal theme with grid lines
+  labs(
+    title = "Proportion of Unsolved Homicides by City",
+    x = "Proportion of Unsolved Homicides",
+    y = "City"
+  ) +
+  theme(
+    panel.grid.major = element_line(color = "gray80", size = 0.5),  # Add major grid lines
+    panel.grid.minor = element_blank(),  # Remove minor grid lines
+    axis.text.y = element_text(size = 7),  # Reduce city label size
+    axis.text.x = element_text(size = 10),
+    axis.title = element_text(size = 12, face = "bold"),
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5)
+  )
+
+
+plot_data
+
+```
+
 
